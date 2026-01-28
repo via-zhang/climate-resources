@@ -62,6 +62,7 @@ idx_reactive <-  reactive({
         ),
         card_body(
           sub$Summary,
+          HTML("<br>"),
           sub$Email.Address
         ),
         card_footer(

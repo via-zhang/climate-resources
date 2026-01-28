@@ -50,6 +50,7 @@ idx_reactive <-  reactive({
     sub <- idx_reactive()
     if (is.data.frame(sub) == T){
       HTML(paste(sub$Lead_Name, " (",sub$Email.Address, ")<br>",
+                 sub$Name.of.paper, "<br>",
                  sub$Summary, "<br>",
                  sub$Link.to.Paper, sep = ""))
     }

@@ -18,7 +18,7 @@ ui <- page_sidebar(
   # Sidebar panel for inputs ----
   sidebar = sidebar(
     textInput("Input_Title", "Search by title:"),
-    textInput("Input_KWIC", "Select keyword:"),
+    textInput("Input_KWIC", "Select keyword (Required):"),
     textInput("Input_geo", "Enter location (Required):")
   ),
   

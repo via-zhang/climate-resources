@@ -1,13 +1,12 @@
 library(shiny)
 library(shinyWidgets)
 library(bslib)
-library(gsheet)
 library(stringr)
 
 ### Data ###
 # Read data from spreadsheet (connected to Google Form)
-url ='https://docs.google.com/spreadsheets/d/1ofQVouiKKNqAaxeF12eVqOOTggYkknOUZFKT90sQoZY' 
-df <- read.csv(text=gsheet2text(url, format='csv'), stringsAsFactors=FALSE, header = T)
+url ='https://docs.google.com/spreadsheets/d/1ofQVouiKKNqAaxeF12eVqOOTggYkknOUZFKT90sQoZY/export?format=csv' 
+df <- read.csv(url, stringsAsFactors=FALSE, header = T)
 
 colnames(df)[c(5:7, 9:11)] <- c("Contact", "Lead_Name", "Location", "Link.to.Paper","Summary", "Key.Terms")
 

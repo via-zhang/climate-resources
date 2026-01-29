@@ -9,6 +9,7 @@ url ='https://docs.google.com/spreadsheets/d/1ofQVouiKKNqAaxeF12eVqOOTggYkknOUZF
 
 df <- read.csv(text=gsheet2text(url, format='csv'), stringsAsFactors=FALSE, header = T)
 colnames(df)[c(5:7, 9:11)] <- c("Contact", "Lead_Name", "Location", "Link.to.Paper","Summary", "Key.Terms")
+
 # if scientist doesn't want to be contacted, change email to "email not shared"
 df$Email.Address <- ifelse(df$Contact != "Yes", paste0("email not shared"), df$Email.Address)
 
@@ -30,7 +31,6 @@ ui <- page_sidebar(
   
   submitButton(text = "Filter"),
   
-  
   # Output: List of Relevant Research ----
   uiOutput('text')
 )
@@ -43,19 +43,19 @@ idx_reactive <-  reactive({
   
   if (isTruthy(input$Input_Title)) {
     # determine which rows of data contain the title 
-    idx = grepl(input$Input_Title, df_sub$Name.of.paper, ignore.case = T)
+    idx = grepl(trimws(input$Input_Title), df_sub$Name.of.paper, ignore.case = T)
     df_sub <- df_sub[idx,]
   }
   
   if (isTruthy(input$Input_KWIC)) {
     # determine which rows of data contain the key words 
-    idx = grepl(input$Input_KWIC, df_sub$Key.Terms, ignore.case = T)
+    idx = grepl(trimws(input$Input_KWIC), df_sub$Key.Terms, ignore.case = T)
     df_sub <- df_sub[idx,]
   }
-    
+  
   # determine which rows of data contain correct locations 
   if (isTruthy(input$Input_geo)) {
-    idx <- grepl(input$Input_geo, df_sub$Location, ignore.case = T)
+    idx <- grepl(trimws(input$Input_geo), df_sub$Location, ignore.case = T)
     df_sub <- df_sub[idx,]
   }
   
@@ -80,8 +80,6 @@ idx_reactive <-  reactive({
       HTML("Try another search")
     }
   })
-  
 }
 
 shinyApp(ui = ui, server = server)
-

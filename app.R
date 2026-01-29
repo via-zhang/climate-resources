@@ -14,12 +14,18 @@ df$Email.Address <- ifelse(df$Contact != "Yes", paste0("email not shared"), df$E
 
 ui <- page_sidebar(
   # App title ----
-  title = "Climate Advocates Resource Center",
+  title = "Climate Advocates Resource Database",
   # Sidebar panel for inputs ----
   sidebar = sidebar(
     textInput("Input_Title", "Search by title:"),
-    textInput("Input_KWIC", "Select keyword:"),
-    textInput("Input_geo", "Enter location (Required):")
+    selectInput(inputId = "Input_KWIC",
+                label = "Select keyword:",
+                choices = c("Climate change", "Sustainability", "Fisheries",
+                            "Social science", "Conservation", "Restoration",
+                            "Pollution", "Marine"),
+                multiple = T
+    ),
+    textInput("Input_geo", "Enter location:")
   ),
   
   submitButton(text = "Filter"),
@@ -33,45 +39,46 @@ ui <- page_sidebar(
 server <- function(input, output) {
   
 idx_reactive <-  reactive({
-  req(input$Input_KWIC)
+  df_sub <- df
+  
+  if (isTruthy(input$Input_Title)) {
+    # determine which rows of data contain the title 
+    idx = grepl(input$Input_Title, df_sub$Name.of.paper, ignore.case = T)
+    df_sub <- df_sub[idx,]
+  }
+  
+  if (isTruthy(input$Input_KWIC)) {
     # determine which rows of data contain the key words 
-    idx = grepl(input$Input_Title, df$Name.of.paper, ignore.case = T)
-    df_sub <- df[idx,]
+    idx = grepl(input$Input_KWIC, df_sub$Key.Terms, ignore.case = T)
+    df_sub <- df_sub[idx,]
+  }
     
-    # determine which rows of data contain the key words 
-    idx = grepl(input$Input_KWIC, df$Key.Terms, ignore.case = T)
-    df_sub <- df[idx,]
-    
-    # determine which rows of data contain correct locations 
-    req(input$Input_geo)
-      idx <- grepl(input$Input_geo, df_sub$Location, ignore.case = T)
-      df_sub <- df_sub[idx,]
-    
-    if(nrow(df_sub == 0)){df_subs <- c("Try another search")}
-    return(df_sub)
-  })
-
+  # determine which rows of data contain correct locations 
+  if (isTruthy(input$Input_geo)) {
+    idx <- grepl(input$Input_geo, df_sub$Location, ignore.case = T)
+    df_sub <- df_sub[idx,]
+  }
+  
+  return(df_sub)
+})
 
   output$text <- renderUI({
     sub <- idx_reactive()
-    if (is.data.frame(sub) == T){
-      card(
-        full_screen = TRUE,
-        card_header(
-          sub$Lead_Name
-        ),
-        card_body(
-          sub$Summary,
-          sub$Email.Address
-        ),
-        card_footer(
-          sub$Link.to.Paper
+    
+    if (is.data.frame(sub) && nrow(sub) > 0){
+      cards <- lapply(1:nrow(sub), function(i) {
+        card(
+          full_screen = TRUE,
+          min_height = 180,
+          card_header(sub$Name.of.paper[i]),
+          card_body(sub$Summary[i]),
+          card_footer(sub$Link.to.Paper[i])
         )
-      )
+      })
+      tagList(cards)
+    } else {
+      HTML("Try another search")
     }
-    else(HTML(sub))
-    
-    
   })
   
 }

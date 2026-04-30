@@ -8,6 +8,8 @@ library(stringr)
 url ='https://docs.google.com/spreadsheets/d/1ofQVouiKKNqAaxeF12eVqOOTggYkknOUZFKT90sQoZY/export?format=csv' 
 df <- read.csv(url, stringsAsFactors=FALSE, header = T)
 
+sheet_id <- "Complaints_Database" # for issues
+
 colnames(df)[c(5:7, 9:11)] <- c("Contact", "Lead_Name", "Location", "Link.to.Paper","Summary", "Key.Terms")
 
 all_keywords <- str_to_title(unique(trimws(unlist(strsplit(df$Key.Terms, ",|;|/")))))
@@ -111,7 +113,14 @@ ui <- page_sidebar(
     actionButton("reset_btn", "Reset Filters",
                  icon = icon("rotate-left"),
                  class = "btn-secondary",
-                 style = "width: 100%; margin-top: 10px; color: white; background-color: #0071bc;")
+                 style = "width: 100%; margin-top: 10px; color: white; background-color: #0071bc;"),
+    hr(style = "border-top: 1px solid #ffffff50; margin: 20px 0;"),
+    p("Are you a scientist?", style = "color: white; font-weight: bold; margin-bottom: 5px;"),
+    actionButton("submit_work", "Submit Your Paper", 
+                 onclick = "window.open('https://docs.google.com/forms/d/e/1FAIpQLScPwdR6mCdjOce15b8A0QMyXJb0mF3M9vW9iZOv_5nGv6Umkw/viewform', '_blank')",
+                 icon = icon("paper-plane"),
+                 class = "btn-primary",
+                 style = "width: 100%; background-color: #28a745; border: none;")
   ),
   uiOutput('text'),
   
@@ -145,7 +154,15 @@ ui <- page_sidebar(
       actionButton("reset_btn_mobile", "Reset Filters",
                    icon = icon("rotate-left"),
                    class = "btn-secondary",
-                   style = "width: 100%; margin-top: 10px; color: white; background-color: #0071bc;")
+                   style = "width: 100%; margin-top: 10px; color: white; background-color: #0071bc;"),
+      # --- MERGED SUBMIT SECTION ---
+      hr(style = "border-top: 1px solid #ffffff50; margin: 20px 0;"),
+      p("Are you a scientist?", style = "text-align: center;"),
+      actionButton("submit_work_mobile", "Submit Your Paper", 
+                   onclick = "window.open('https://docs.google.com/forms/d/e/1FAIpQLScPwdR6mCdjOce15b8A0QMyXJb0mF3M9vW9iZOv_5nGv6Umkw/viewform', '_blank')",
+                   icon = icon("paper-plane"),
+                   class = "btn-success",
+                   style = "width: 100%; background-color: #28a745; border: none;")
     )
   ),
   # Toggle mobile filter panel
@@ -193,6 +210,7 @@ server <- function(input, output, session) {
     updateTextInput(session, "Input_geo_mobile", value = "")
   })
   
+  
   idx_reactive <-  reactive({
     df_sub <- df
     if (isTruthy(input$Input_Title)) {
@@ -210,6 +228,43 @@ server <- function(input, output, session) {
       df_sub <- df_sub[idx,]
     }
     return(df_sub)
+  })
+  
+  observe({
+    sub <- idx_reactive()
+    if (nrow(sub) == 0) return()
+    lapply(1:nrow(sub), function(i) {
+      observeEvent(input[[paste0("report_", i)]], {
+        current_report_paper(sub$Name.of.paper[i]) # "Remember" which paper was clicked
+        showModal(modalDialog(
+          title = paste("Report Issue:", sub$Name.of.paper[i]),
+          textAreaInput("complaint_text", "What is wrong with this summary?", rows = 3),
+          footer = tagList(
+            modalButton("Cancel"),
+            actionButton("send_report", "Submit Report", class = "btn-danger")
+          ),
+          easyClose = TRUE
+        ))
+      })
+    })
+  })
+  
+  observeEvent(input$send_report, {
+    req(input$complaint_text)
+    new_entry <- data.frame(
+      Timestamp = as.character(Sys.time()),
+      Paper = current_report_paper(),
+      Complaint = input$complaint_text,
+      stringsAsFactors = FALSE
+    )
+    
+    tryCatch({
+      sheet_append(sheet_id, data = new_entry) # Writes the data to Google
+      removeModal()
+      showNotification("Thank you! Your report has been saved.", type = "message")
+    }, error = function(e) {
+      showNotification("Error: Could not save to Google Sheets.", type = "error")
+    })
   })
   
   # Render outputs
@@ -262,7 +317,12 @@ server <- function(input, output, session) {
                 tags$a(href = sub$Link.to.Paper[i],
                        target = "_blank",
                        onclick = "event.stopPropagation();",
-                       "Read Paper")
+                       "Read Paper"),
+                actionLink(inputId = paste0("report_", i), 
+                           label = "Improve Summary", 
+                           icon = icon("circle-exclamation"),
+                           style = "color: #dc3545; text-decoration: none;",
+                           onclick = "event.stopPropagation();")
               )
             )
           )

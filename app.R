@@ -2,13 +2,12 @@ library(shiny)
 library(shinyWidgets)
 library(bslib)
 library(stringr)
+library(httr)
 
 ### Data ###
 # Read data from spreadsheet (connected to Google Form)
 url ='https://docs.google.com/spreadsheets/d/1ofQVouiKKNqAaxeF12eVqOOTggYkknOUZFKT90sQoZY/export?format=csv' 
 df <- read.csv(url, stringsAsFactors=FALSE, header = T)
-
-sheet_id <- "Complaints_Database" # for issues
 
 colnames(df)[c(5:7, 9:11)] <- c("Contact", "Lead_Name", "Location", "Link.to.Paper","Summary", "Key.Terms")
 
@@ -190,17 +189,41 @@ ui <- page_sidebar(
 ### Server ###
 server <- function(input, output, session) {
   
-  # Sync mobile and desktop inputs
+  current_report_paper <- reactiveVal(NULL)
+  
+  # --- THE SUBMISSION ENGINE ---
+  observeEvent(input$send_report, {
+    req(input$complaint_text)
+    
+    # 1. THE URL: Must be the long version ending in /formResponse
+    # NOT the short forms.gle version!
+    form_url <- "https://docs.google.com/forms/d/e/1FAIpQLSe1M1Jridkv0PSailnpc6NudWvOTkJVux-0_RBDs-LRZFBPPQ/formResponse"
+    
+    # 2. THE ENTRY IDs: Find these using the 'Get pre-filled link' trick
+    form_data <- list(
+      "entry.301622631" = current_report_paper(), 
+      "entry.139757105" = input$complaint_text 
+    )
+    
+    # 3. THE POST REQUEST: This bypasses authentication
+    tryCatch({
+      POST(form_url, body = form_data, encode = "form")
+      removeModal()
+      showNotification("Thank you! Feedback saved.", type = "message")
+    }, error = function(e) {
+      showNotification("Technical error, please try again.", type = "error")
+    })
+  })
+  
+  # --- INPUT SYNCING ---
   observeEvent(input$Input_Title_mobile, {updateTextInput(session, "Input_Title", value = input$Input_Title_mobile)})
   observeEvent(input$Input_Title, {updateTextInput(session, "Input_Title_mobile", value = input$Input_Title)})
-  
   observeEvent(input$Input_KWIC_mobile, {updateSelectInput(session, "Input_KWIC", selected = input$Input_KWIC_mobile)})
   observeEvent(input$Input_KWIC, {updateSelectInput(session, "Input_KWIC_mobile", selected = input$Input_KWIC)})
-  
   observeEvent(input$Input_geo_mobile, {updateTextInput(session, "Input_geo", value = input$Input_geo_mobile)})
   observeEvent(input$Input_geo, {updateTextInput(session, "Input_geo_mobile", value = input$Input_geo)})
   
-  # Reset filters
+  # --- RESET BUTTON ---
   observeEvent(c(input$reset_btn, input$reset_btn_mobile), {
     updateTextInput(session, "Input_Title", value = "")
     updateTextInput(session, "Input_Title_mobile", value = "")
@@ -210,8 +233,8 @@ server <- function(input, output, session) {
     updateTextInput(session, "Input_geo_mobile", value = "")
   })
   
-  
-  idx_reactive <-  reactive({
+  # --- FILTER LOGIC ---
+  idx_reactive <- reactive({
     df_sub <- df
     if (isTruthy(input$Input_Title)) {
       idx = grepl(trimws(input$Input_Title), df_sub$Name.of.paper, ignore.case = T)
@@ -230,18 +253,19 @@ server <- function(input, output, session) {
     return(df_sub)
   })
   
+  # --- MODAL TRIGGER ---
   observe({
     sub <- idx_reactive()
     if (nrow(sub) == 0) return()
     lapply(1:nrow(sub), function(i) {
       observeEvent(input[[paste0("report_", i)]], {
-        current_report_paper(sub$Name.of.paper[i]) # "Remember" which paper was clicked
+        current_report_paper(sub$Name.of.paper[i]) 
         showModal(modalDialog(
-          title = paste("Report Issue:", sub$Name.of.paper[i]),
-          textAreaInput("complaint_text", "What is wrong with this summary?", rows = 3),
+          title = paste("Help us improve:", sub$Name.of.paper[i]),
+          textAreaInput("complaint_text", "What was confusing about this summary?", rows = 3),
           footer = tagList(
             modalButton("Cancel"),
-            actionButton("send_report", "Submit Report", class = "btn-danger")
+            actionButton("send_report", "Submit", class = "btn-danger")
           ),
           easyClose = TRUE
         ))
@@ -249,90 +273,53 @@ server <- function(input, output, session) {
     })
   })
   
-  observeEvent(input$send_report, {
-    req(input$complaint_text)
-    new_entry <- data.frame(
-      Timestamp = as.character(Sys.time()),
-      Paper = current_report_paper(),
-      Complaint = input$complaint_text,
-      stringsAsFactors = FALSE
-    )
-    
-    tryCatch({
-      sheet_append(sheet_id, data = new_entry) # Writes the data to Google
-      removeModal()
-      showNotification("Thank you! Your report has been saved.", type = "message")
-    }, error = function(e) {
-      showNotification("Error: Could not save to Google Sheets.", type = "error")
-    })
-  })
-  
-  # Render outputs
+  # --- RENDER CARDS ---
+  # --- RENDER CARDS ---
   output$text <- renderUI({
     sub <- idx_reactive()
     if (is.data.frame(sub) && nrow(sub) > 0){
-      cards <- lapply(1:nrow(sub), function(i) {
-        keywords <- str_to_title(unlist(strsplit(sub$Key.Terms[i], ",|;|/"))) |>
-          lapply(trimws)
-        keywords <- gsub('Gis', 'GIS', keywords)
-        keyword_pills <- lapply(keywords, function(kw) {
-          tags$span(
-            class = "badge rounded-pill bg-primary me-1 mb-1",
-            style = "font-size: 0.85em;",
-            kw
-          )
-        })
-        locations <- unlist(strsplit(sub$Location[i], ",|;|/")) |>
-          lapply(trimws)
-        location_pills <- lapply(locations, function(loc) {
-          tags$span(
-            class = "badge rounded-pill bg-success me-1 mb-1",
-            style = "font-size: 0.85em;",
-            loc
-          )
-        })
-        author_text <- if(sub$Contact[i] == "Yes") {
-          paste0("Lead Author: ", sub$Lead_Name[i], " (", str_to_lower(sub$Email.Address[i]), ")")
-        } else {
-          paste0("Lead Author: ", sub$Lead_Name[i])
-        }
-        paper_link <- sub$Link.to.Paper[i]
-        layout_columns(
+      
+      # Wrap the list of cards in layout_columns to restore the grid
+      layout_columns(
+        col_widths = c(12, 6, 4), # 1 col on mobile, 2 on small tablets, 3 on desktop
+        lapply(1:nrow(sub), function(i) {
+          
+          keywords <- str_to_title(unlist(strsplit(sub$Key.Terms[i], ",|;|/"))) |> lapply(trimws)
+          keyword_pills <- lapply(keywords, function(kw) tags$span(class = "badge rounded-pill bg-primary me-1 mb-1", kw))
+          
+          locations <- unlist(strsplit(sub$Location[i], ",|;|/")) |> lapply(trimws)
+          location_pills <- lapply(locations, function(loc) tags$span(class = "badge rounded-pill bg-success me-1 mb-1", loc))
+          
+          author_text <- if(sub$Contact[i] == "Yes") paste0(sub$Lead_Name[i], " (", str_to_lower(sub$Email.Address[i]), ")") else sub$Lead_Name[i]
+          
           card(
+            class = "h-100", # Makes all cards in a row the same height
             full_screen = TRUE,
-            onclick = sprintf("window.open('%s', '_blank')", paper_link),
+            onclick = sprintf("window.open('%s', '_blank')", sub$Link.to.Paper[i]),
             card_header(sub$Name.of.paper[i]),
             card_body(
               p(sub$Summary[i]),
               div(
-                style = "display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap;",
-                div(tagList(keyword_pills)),
+                style = "margin-top: auto;", # Pushes pills to the bottom of the body
+                div(tagList(keyword_pills)), 
                 div(tagList(location_pills))
               )
             ),
             card_footer(
-              div(
-                style = "display: flex; justify-content: space-between; align-items: center;",
-                tags$span(author_text),
-                tags$a(href = sub$Link.to.Paper[i],
-                       target = "_blank",
-                       onclick = "event.stopPropagation();",
-                       "Read Paper"),
-                actionLink(inputId = paste0("report_", i), 
-                           label = "Improve Summary", 
-                           icon = icon("circle-exclamation"),
-                           style = "color: #dc3545; text-decoration: none;",
-                           onclick = "event.stopPropagation();")
+              div(style = "display: flex; justify-content: space-between; align-items: center; font-size: 0.8em;",
+                  tags$span(author_text),
+                  div(
+                    tags$a(href = sub$Link.to.Paper[i], target = "_blank", onclick = "event.stopPropagation();", "Read Paper", style="margin-right:10px;"),
+                    actionLink(inputId = paste0("report_", i), label = "Improve Summary", icon = icon("circle-question"), style = "color: #dc3545;", onclick = "event.stopPropagation();")
+                  )
               )
             )
           )
-        )
-      })
-      tagList(cards)
+        })
+      )
     } else {
-      HTML("No papers found; try another search.")
+      HTML("<div style='padding: 20px;'>No papers found; try another search.</div>")
     }
   })
 }
-
 shinyApp(ui = ui, server = server)
